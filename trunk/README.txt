@@ -178,6 +178,7 @@ The layout of (at least my) harddisk seems to be:
 
 0x00000000 - Boot block? My first 2 sectors were unfortunately damaged
 0x00000800 - Start of GUIDE+ Firmware
+0x00000838 - DWORD of block number where File name table directory starts
 0x003E8800 - End   of GUIDE+ Firmware
 0x02004000 - File name table directory
 0x02004200 - Table with FNT offsets to MRU (must recently used) files? 
