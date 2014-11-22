@@ -22,14 +22,17 @@
 #define snprintf _snprintf
 
 #define BLOCK_SIZE		2048		// Data is allocated in 2K blocks
+#define SECT_SIZE		512			// A sector always has 512 bytes
+
 #define VOB_MAGIC		0xBA010000	// Start of a MPEG Pack header
 #define FNTENTRY_MAGIC	0x0CCC2400	// Entries in FNTENTRY list seem to have this magic
 #define SCR_THRESH_X	0x600		// Default threshold SCR stamps on extract
 #define SCR_THRESH_M	5			// Default threshold SCR stamps on merge
 #define MAX_DIRSRCH		0x5000000	// Heuristic: Search up to this offset for diretory
 
-#define DIR_OFFSET		0x2004000	// Directory usually starts at this offset
-#define FOT_OFFSET		0x2AE8		// File order table offset relative to DIR_OFFSET, not sure if this is static?
+#define FNT_OFFSET	BLOCK_SIZE+56	// Pointer to FNT directory should be at this offset (sector 5)
+#define FAT_OFFSET	5*SECT_SIZE+128	// File allocation table offset relative to start
+#define FOT_OFFSET	0x2AE8			// File order table offset relative to start
 /* If FOT cannot be found at this offset, you should try searching for a 
  * 0xFF bitmap follwing the fatdir-pointers and at the end of that list, there
  * is an ADDRESS pointing at the FOT
@@ -57,8 +60,11 @@ typedef struct {
 	WORD sort;       // Maybe sorting number of some kind? Often equal to fotoffset
 	WORD fotoffset;  // Offset in FOTENTRY table
 	WORD files;		 // Number of files in this directory
-	WORD channel;	 // Recording source.. <0x80 = Chan number, >0x80 = LINE: 0x80=L1, 0x81=L2, 0x82=DV
-	char progname[68];// Name of program
+	WORD channel;	 // Recording source.. <0x80 = Chan number, >0x80 = LINE: 0x80=L1, 0x81=L2, 0x82=L3, 0x83=DV
+	char progname[64];// Name of program
+	WORD unk3;
+	BYTE locked;	// Locked? 01 = locked, 00 = not locked
+	BYTE genre;		// 00 = No genre, 01 = Movies, 03 = Sports, 05 = Others, 06 = Children, 07-0B = Free 1..5
 	DWORD magic;
 	BYTE unk4[32];
 } FNTENTRY;
@@ -93,7 +99,7 @@ typedef struct {
 #pragma pack()
 
 /* Constants */
-#define FNTDIR_ENTRIES      (512/sizeof(ADDRESS))
+#define FNTDIR_ENTRIES   (SECT_SIZE/sizeof(ADDRESS))
 #define BLOCKDIR_ENTRIES (BLOCK_SIZE/sizeof(ADDRESS))
 #define FATDIR_ENTRIES   (BLOCK_SIZE/sizeof(ADDRESS))
 #define FOTDIR_ENTRIES   ((1<<(sizeof(WORD)*8))/FOT_ENTRIES)
@@ -148,7 +154,6 @@ int usage(char *pszCmd)
 		"\t-sx\tSpecifies threshold for -x (extract), Default: %d\n"
 		"\t-sm\tSpecifies threshold for -m (merge), Default: %d\n"
 		"\t-o\tSpecifies offset in <src file> where to start search, Def.: 0\n"
-		"\t-O\tSpecifies offset for directory list index (-d), Def.: 0x%08X\n"
 		"\t-c\tSpecifies start counter of MPEG-File naming (extract), Def.: 0\n\n"
 		"Operations (mandatory):\n"
 		"\t-l\tList names of recordings found in <src file>\n"
@@ -161,7 +166,7 @@ int usage(char *pszCmd)
 		"If your directory structure and image isn't garbled, you should use -d\n"
 		"In case your image is severely damaged, you can try -p instead.\n\n"
 		"Example: %s -d pioneer.img f:\\dump\n", pszCmd, SCR_THRESH_X, SCR_THRESH_M, 
-		DIR_OFFSET, pszCmd);
+		pszCmd);
 	return EXIT_FAILURE;
 }
 
@@ -354,9 +359,6 @@ BOOL merge(char *pszDstDir, DWORD dwStep)
  *	pszSrc		- Fielname of source image file
  *	pszDstDir	- If creating Dirlist and/or dumping movies, destination
  *				  directory where extracted data should be put to.
- *	dwOffset	- Offset where to search for directory information.
- *				  When listing, just set it to 0, when extracting movies,
- *				  usually you should set it to DIR_OFFSET
  *  dwThresh	- Offset of last position where to search directory 
  *				  information on MODE_HEUR.
  *				  Usually you should put MAX_DIRSRCH here.
@@ -368,7 +370,7 @@ BOOL merge(char *pszDstDir, DWORD dwStep)
 #define MODE_HEUR		0	/* Heuristic mode, just scan for Dir entries */
 #define MODE_USEFS		1	/* Use Filesystem info instead of dumb scanning */
 #define MODE_EXTRACT	2	/* Extract files using Filesytem, requires pszDstDir */
-BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwOffset, DWORD dwThresh, DWORD dwMode)
+BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
 {
 	HANDLE fp, fpOut;
 	HMODULE hShell;
@@ -378,6 +380,7 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwOffset, DWORD dwThresh, DWORD dw
 	fpPathCleanupSpec _PathCleanupSpec = NULL;
 	int i;
 	FNTENTRY fntentry[FNT_ENTRIES], *pfntentry;
+	ADDRESS fntaddr;
 
 	if (pszDstDir)
 	{
@@ -417,10 +420,18 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwOffset, DWORD dwThresh, DWORD dw
 	if (hShell=LoadLibrary("shell32.dll"))
 		_PathCleanupSpec=(fpPathCleanupSpec)GetProcAddress(hShell, "PathCleanupSpec");
 	
-	offset.QuadPart = dwOffset;
-	if (dwOffset) SetFilePointer(fp,dwOffset,NULL,FILE_BEGIN);
+	SetFilePointer(fp,FNT_OFFSET,NULL,FILE_BEGIN);
+	if (!ReadFile(fp,&fntaddr,sizeof(fntaddr),&read,NULL) || !read)
+	{
+		fprintf (stderr, "Cannot read FNT address @%X\n", FNT_OFFSET);
+		ShowError();
+		return FALSE;
+	}
+	offset.QuadPart = fntaddr.block?B2N_32(fntaddr.block):0x4008;
+	offset.QuadPart *= BLOCK_SIZE;
 	if (dwThresh) imgsz.QuadPart =dwThresh;
 	else imgsz.LowPart=GetFileSize(fp,&imgsz.HighPart);
+	SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN);
 
 	if (dwMode)
 	{
@@ -431,31 +442,32 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwOffset, DWORD dwThresh, DWORD dw
 
 		/* Accurately parse directory structure and extract videos based on
 		 * filesystem information
-		 * We assume that current offset is set to DIR_OFFSET
 		 */
 
 		/* Read a sector (file name table directory) */
-		if (!ReadFile(fp,fntdir,sizeof(fntdir),&read,NULL) || !read)
+		if (!ReadFile(fp,&fntdir,sizeof(fntdir),&read,NULL) || !read)
 		{
-			fprintf (stderr, "Cannot read FNT Directory info @%08X: ", dwOffset);
+			fprintf (stderr, "Cannot read FNT Directory info @%X%08X: ", offset.HighPart, offset.LowPart);
 			ShowError();
 			return FALSE;
 		}
 
 		/* Go to FATENTRY list (forward 4 sectors) */
-		if (!SetFilePointer(fp,4*512+128,NULL,FILE_CURRENT) ||
+		offset.QuadPart += FAT_OFFSET;
+		if (!SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) ||
 			!ReadFile(fp,&fatdir,sizeof(fatdir),&read,NULL) || !read)
 		{
-			fprintf (stderr, "Cannot read FATENTRY list @%08X: ", dwOffset+4*512);
+			fprintf (stderr, "Cannot read FATENTRY list @%X%08X: ", offset.HighPart, offset.LowPart);
 			ShowError();
 			return FALSE;
 		}
 
 		/* Now find block number of file order table */
-		if (!SetFilePointer(fp,dwOffset+FOT_OFFSET,NULL,FILE_BEGIN) ||
+		offset.QuadPart += (FOT_OFFSET)-(FAT_OFFSET);
+		if (!SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) ||
 			!ReadFile(fp,&fotdir,sizeof(fotdir),&read,NULL) || !read)
 		{
-			fprintf (stderr, "Cannot read File order table directory @%08X: ", dwOffset+FOT_OFFSET);
+			fprintf (stderr, "Cannot read File order table directory @%X%08X: ", offset.HighPart, offset.LowPart);
 			ShowError();
 			return FALSE;
 		}
@@ -840,7 +852,7 @@ static BOOL dumpFile(HANDLE fp, HANDLE fpOut, FATENTRY *fat)
 int main(int argc, char **argv)
 {
 	int i;
-	DWORD dwXthresh=SCR_THRESH_X, dwMthresh=SCR_THRESH_M, dwOffset=0, dwStart=0, dwDirOffset=DIR_OFFSET;
+	DWORD dwXthresh=SCR_THRESH_X, dwMthresh=SCR_THRESH_M, dwOffset=0, dwStart=0;
 
 	printf ("Simple Pioneer DVR-633H recovery\n(c) by leecher@dose.0wnz.at 2014\n\n");
 	for (i=1; i<argc; i++)
@@ -878,9 +890,6 @@ int main(int argc, char **argv)
 			case 'o':
 				dwOffset = strtoul(argv[++i], NULL, 0);
 				break;
-			case 'O':
-				dwDirOffset = strtoul(argv[++i], NULL, 0);
-				break;
 			case 'c':
 				dwStart = strtoul(argv[++i], NULL, 0);
 				break;
@@ -897,9 +906,9 @@ int main(int argc, char **argv)
 			switch (argv[i][1])
 			{
 			case 'd':
-				return dir(argv[i+1], argv[i+2], dwDirOffset, MAX_DIRSRCH, MODE_EXTRACT)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[i+1], argv[i+2], MAX_DIRSRCH, MODE_EXTRACT)?EXIT_SUCCESS:EXIT_FAILURE;
 			case 'L':
-				return dir(argv[i+1], argv[i+2], dwOffset, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[i+1], argv[i+2], MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
 			}
 			if (!extract(argv[i+1], argv[i+2], dwOffset, dwStart, dwXthresh)) return EXIT_FAILURE;
 			if (argv[i++][1]!='p') return EXIT_SUCCESS;
@@ -916,7 +925,8 @@ int main(int argc, char **argv)
 				fprintf(stderr, "%s needs source file!\n", argv[i]);
 				return EXIT_FAILURE;
 			}
-			return dir(argv[++i], NULL, dwOffset, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+			if (!dir(argv[++i], NULL, MAX_DIRSRCH, MODE_USEFS))
+				return dir(argv[++i], NULL, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
 		default:
 			fprintf(stderr, "Unknown commandline option: %s\n\n", argv[i]);
 			break;
