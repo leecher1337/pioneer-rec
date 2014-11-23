@@ -13,7 +13,7 @@ guide for this on the PioneerFAQ website:
 http://www.pioneerfaq.info/english/dvr630.php
 
 After removing the HDD, you can mount it to your PC, i.e. with an USB
-Adapter or directly.
+Adapter or (preferably) directly to the IDE interface.
 
 If the PC recognizes the drive, you may have luck and it is only partly 
 damaged and data can be rescued. i.e. on my HDD, Sector 0 and 1 were
@@ -32,9 +32,10 @@ http://www.datarescue.com/photorescue/v3/drdd.htm
 
 However due to the way how windows handles bad drives, it's usually a pain
 dumping them on Windows, i.e. if the drive detaches itself from the bus 
-during read, most dumper programs including drdd just continue dumping
-and writing lots of faulty sectors even if the sectors would be readable
-after the drive reattached itself to the bus after reset.
+during read und is connected via a USB-Adapter, most dumper programs including
+drdd just continue dumping and writing lots of faulty sectors even if the 
+sectors would be readable after the drive reattached itself to the bus after 
+reset.
 Therefore I recommend using a linux BootCD/system and dd_rescue like also
 mentioned in the guide of pioneerfaq.
 
@@ -166,6 +167,43 @@ Good luck with recovery! If you have problems, especially with the automated
 recovery (-d option), feel free to contact me so that you can send me the 
 header part of your disk image where I can have a look, that may help me 
 improving my extraction routines.
+
+Installing a replacement Harddisk into your DVR recorder
+========================================================
+This topic is already covered in the PioneerFAQ article mentioned above, but
+it says that you are requiring a DVD Recorder Data Disc (GGV1239) and a
+Pioneer service remote control model number GGF1381/GGF1595.
+As for the data disc, just ask the nice author of the pioneerFAQ and make
+a donation and you will get it from him.
+A more severe problem is to obtain the Pioneer service remote. First,
+you most likely don't want to waste money just for swapping the harddisk
+and second, it's not really easy to get it.
+So I was looking for ways to proceed without it and I found a WinLIRC file
+for this remote: pioservrmtGGF1381.cf
+It can be downloaded in the package winlirc-0.6.5-ggf1381.rar from here: 
+http://www.dvdboard.de/forum/showthread.php?121319-Pioneer-service-disc-GGV-%28DVD%29
+
+However I was too lazy to solder a sending circuit for use with WinLIRC,
+but I found out that the IrDA Port in my Thinkpad Notebook can also be used
+for it.
+So I tried this: http://slydiman.me/sce/plugins/ir210.htm
+I got the IR sender to transmit data (I checked this with a IR receiver), but
+I was unable to emit a signal that was recognized by the Pioneer DVR.
+Fortunately, I found a thread where a user provided a code file for the 
+DOS-program winsamp (http://www.veg.nildram.co.uk/remote.htm) for the 
+service remote:
+https://www.avforums.com/threads/succesful-upgrade-of-hdd-on-rdr-hxd970.675639/page-3#post-6158149
+In case it gets lost, I archived the files, just write me an e-mail.
+I tried to use the program in Windows, it emitted signals via IRDA, but they
+also weren't recognized by the DVR. I suppose this is due to timing issues in 
+a multitasking environment like Windows. So I really booted up DOS from a
+floppy and treid it there and suprise: IT REALLY WORKS!
+
+So I was able to swap the Harddisk successfully just using my Thinkpad.
+If you also own a Thinkpad, don't forget to assign the IrDA port to a 
+COM-Port (usually COM2 at Address 3F8h) in BIOS, this is normally not enabled.
+Enter BIOS settings with F1. Afterwards you can change it back again.
+
 
 Technical details
 =================
