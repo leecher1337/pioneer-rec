@@ -187,6 +187,13 @@ However I was too lazy to solder a sending circuit for use with WinLIRC,
 but I found out that the IrDA Port in my Thinkpad Notebook can also be used
 for it.
 So I tried this: http://slydiman.me/sce/plugins/ir210.htm
+Thge correct Settings fpr WinLIRC can be found here:
+http://www.videohelp.com/dvdhacks/pioneer-dvr-440h/6947#25993
+Reciever type: RX
+Virtual Pulse: 300
+Speed: 115200
+Transmitter Settings: Unselect hardware carrier and select TX 
+
 I got the IR sender to transmit data (I checked this with a IR receiver), but
 I was unable to emit a signal that was recognized by the Pioneer DVR.
 Fortunately, I found a thread where a user provided a code file for the 
@@ -197,7 +204,8 @@ In case it gets lost, I archived the files, just write me an e-mail.
 I tried to use the program in Windows, it emitted signals via IRDA, but they
 also weren't recognized by the DVR. I suppose this is due to timing issues in 
 a multitasking environment like Windows. So I really booted up DOS from a
-floppy and treid it there and suprise: IT REALLY WORKS!
+floppy and tried it there and suprise: IT REALLY WORKS!
+NOTE: The STOP key mentioned in the PDF corresponds to the "OpenClose" key.
 
 So I was able to swap the Harddisk successfully just using my Thinkpad.
 If you also own a Thinkpad, don't forget to assign the IrDA port to a 
