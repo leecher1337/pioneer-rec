@@ -25,18 +25,9 @@
 #define SECT_SIZE		512			// A sector always has 512 bytes
 
 #define VOB_MAGIC		0xBA010000	// Start of a MPEG Pack header
-#define FNTENTRY_MAGIC	0x0CCC2400	// Entries in FNTENTRY list seem to have this magic
 #define SCR_THRESH_X	0x600		// Default threshold SCR stamps on extract
 #define SCR_THRESH_M	5			// Default threshold SCR stamps on merge
 #define MAX_DIRSRCH		0x5000000	// Heuristic: Search up to this offset for diretory
-
-#define FNT_OFFSET	BLOCK_SIZE+56	// Pointer to FNT directory should be at this offset (sector 5)
-#define FAT_OFFSET	5*SECT_SIZE+128	// File allocation table offset relative to start
-#define FOT_OFFSET	0x2AE8			// File order table offset relative to start
-/* If FOT cannot be found at this offset, you should try searching for a 
- * 0xFF bitmap follwing the fatdir-pointers and at the end of that list, there
- * is an ADDRESS pointing at the FOT
- */
 
 #pragma pack(1)
 
@@ -46,7 +37,13 @@ typedef struct {
 	DWORD unk1;
 } ADDRESS;
 
-/* A [F]ile [N]ame [T]able entry */
+/* A list ob blocks the file consists of */
+typedef struct {
+	DWORD block;	// Block that contains the data
+	WORD blocks;	// Number of blocks the frame consists of, remove highest bit (keyframe?)
+	WORD unk;
+} BLISTENTRY;
+
 typedef struct {
 	WORD yy;	// Year
 	BYTE mm;	// Month
@@ -55,48 +52,16 @@ typedef struct {
 	BYTE mi;	// Minute
 	BYTE ss;	// Second
 	BYTE pad;
-	long unk1;
-	DWORD unk2;
-	WORD sort;       // Maybe sorting number of some kind? Often equal to fotoffset
-	WORD fotoffset;  // Offset in FOTENTRY table
-	WORD files;		 // Number of files in this directory
-	WORD channel;	 // Recording source.. <0x80 = Chan number, >0x80 = LINE: 0x80=L1, 0x81=L2, 0x82=L3, 0x83=DV
-	char progname[64];// Name of program
-	WORD unk3;
-	BYTE locked;	// Locked? 01 = locked, 00 = not locked
-	BYTE genre;		// 00 = No genre, 01 = Movies, 03 = Sports, 05 = Others, 06 = Children, 07-0B = Free 1..5
-	DWORD magic;
-	BYTE unk4[32];
-} FNTENTRY;
-
-/* A [F]ile [O]rder [T]able entry */
-typedef struct {
-	BYTE unk1[8];
-	WORD fatoffset;		// Offset in FATENTRY table
-	WORD nextoffset;	// If Multipart file, offset of next part in this list, 0 on last part
-	DWORD unk2;
-} FOTENTRY;
-
-/* A [F]ile [A]llocation [T]able entry */
-typedef struct {
-	BYTE unk1[12];
-	ADDRESS blockdir;	// Block that contains the blocklist the file consists of
-	BYTE unk2[28];
-	DWORD filesz;		// Size of file in blocks
-	BYTE unk3[28];
-	WORD entry;			// Current entry#
-	WORD unk4;			// Always 1?
-	BYTE unk5[12];
-} FATENTRY;
-
-/* A list ob blocks the file consists of */
-typedef struct {
-	DWORD block;	// Block that contains the data
-	WORD blocks;	// Number of blocks the frame consists of, remove highest bit (keyframe?)
-	WORD unk;
-} BLISTENTRY;
+} TIMESTAMP;
 
 #pragma pack()
+
+#if DVR == 545
+#error DVR545
+#include "dvr545h.h"
+#else
+#include "dvr633h.h"
+#endif
 
 /* Constants */
 #define FNTDIR_ENTRIES   (SECT_SIZE/sizeof(ADDRESS))
@@ -125,8 +90,9 @@ static __inline unsigned short B2N_16(unsigned short x) {
 typedef int (WINAPI *fpPathCleanupSpec)(PCWSTR pszDir, PWSTR pszSpec);
 static void ShowError (void);
 static int myPathCleanupSpec(PWSTR pszSpec);
-static void dumpFNTEntry(char *pszDstDir, int idx, FNTENTRY *fnt);
-static void printFNTEntry(char *pszDstDir, WCHAR *wszDstDir, fpPathCleanupSpec _PathCleanupSpec, int idx, FNTENTRY *fnt);
+static void dumpFNTEntry(char *pszDstDir, int idx, FNTENTRY *fnt, TIMESTAMP *ts);
+static void printFNTEntry(char *pszDstDir, WCHAR *wszDstDir, fpPathCleanupSpec _PathCleanupSpec, 
+						  int idx, FNTENTRY *fnt, TIMESTAMP *ts);
 static BOOL dumpFile(HANDLE fp, HANDLE fpOut, FATENTRY *fat);
 
 /****************************************************************************
@@ -154,7 +120,8 @@ int usage(char *pszCmd)
 		"\t-sx\tSpecifies threshold for -x (extract), Default: %d\n"
 		"\t-sm\tSpecifies threshold for -m (merge), Default: %d\n"
 		"\t-o\tSpecifies offset in <src file> where to start search, Def.: 0\n"
-		"\t-c\tSpecifies start counter of MPEG-File naming (extract), Def.: 0\n\n"
+		"\t-c\t-x,-p: Specifies start counter of MPEG-File naming, Def.:0\n"
+		"\t\t-d,-l,-L: Specifies file name table entry to start with, Def.:0\n\n"
 		"Operations (mandatory):\n"
 		"\t-l\tList names of recordings found in <src file>\n"
 		"\t-L\tCreate directories for found recordings in <dest dir>\n"
@@ -359,6 +326,7 @@ BOOL merge(char *pszDstDir, DWORD dwStep)
  *	pszSrc		- Fielname of source image file
  *	pszDstDir	- If creating Dirlist and/or dumping movies, destination
  *				  directory where extracted data should be put to.
+ *  dwStart     - Start with this entry of the FNT, normally this should be 0
  *  dwThresh	- Offset of last position where to search directory 
  *				  information on MODE_HEUR.
  *				  Usually you should put MAX_DIRSRCH here.
@@ -367,10 +335,14 @@ BOOL merge(char *pszDstDir, DWORD dwStep)
  * Returns:
  *	TRUE on success, FALSE on failure.
  */
-#define MODE_HEUR		0	/* Heuristic mode, just scan for Dir entries */
 #define MODE_USEFS		1	/* Use Filesystem info instead of dumb scanning */
 #define MODE_EXTRACT	2	/* Extract files using Filesytem, requires pszDstDir */
-BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
+#ifdef FNTENTRY_MAGIC
+#define MODE_HEUR		0	/* Heuristic mode, just scan for Dir entries */
+#else
+#define MODE_HEUR		MODE_USEFS
+#endif
+BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwMode)
 {
 	HANDLE fp, fpOut;
 	HMODULE hShell;
@@ -482,10 +454,14 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
 				ReadFile(fp,&fntentry,sizeof(fntentry),&read,NULL) && read)
 			{
 				/* Iterate over programs */
-				for (j=0; fntentry[j].yy && j<FNT_ENTRIES; j++, pfx++)
+				for (j=0; *((WORD*)&fntentry[j]) && j<FNT_ENTRIES; j++, pfx++)
 				{
+					if ((DWORD)pfx<dwStart) continue;
 					pfntentry = &fntentry[j];
-					printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, pfx, pfntentry);
+#ifndef FAT_TS
+					// Assuming that on models with TS in FAT, there is only 1 file...
+					printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, pfx, pfntentry, &pfntentry->ts);
+#endif
 					files = B2N_16(pfntentry->files);
 					if (files>1) printf ("%d files.\n", files);
 
@@ -514,6 +490,9 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
 										ReadFile(fp,&fatentry,sizeof(fatentry),&read,NULL) && read)
 									{
 										pfatentry = &fatentry[fatoffset%FAT_ENTRIES];
+#ifdef FAT_TS
+										printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, pfx, pfntentry, &pfatentry->ts);
+#endif
 										offset.QuadPart = B2N_32(pfatentry->filesz);
 										printf ("Size: %d blocks ", offset.LowPart);
 										offset.QuadPart *= BLOCK_SIZE / 1024;
@@ -534,7 +513,13 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
 												CloseHandle(fpOut);
 
 												/* Ensure to set date/time correctly for the files afterwards */
-												dumpFNTEntry(pszDstDir, pfx, pfntentry);
+												dumpFNTEntry(pszDstDir, pfx, pfntentry,
+#ifdef FAT_TS
+													&pfatentry->ts
+#else
+													&pfntentry->ts
+#endif
+													);
 											}
 											else
 											{
@@ -574,6 +559,7 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
 			}
 		}
 	}
+#ifdef FNTENTRY_MAGIC
 	else
 	{
 		/* Just do a dumb signature match scan to find directory structure.
@@ -583,11 +569,12 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwThresh, DWORD dwMode)
 		{
 			if (offset.QuadPart%100==0) printf ("\r%s %X%08X/%X%08X (%0d%%)...", "Scanning", offset.HighPart, offset.LowPart, 
 				imgsz.HighPart, imgsz.LowPart, (int)(((double)offset.QuadPart/(double)imgsz.QuadPart)*100));
-			for (i=0; fntentry[i].yy && fntentry[i].magic == FNTENTRY_MAGIC && i<FNT_ENTRIES; i++)
-				printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, i, &fntentry[i]);
+			for (i=0; *((WORD*)&fntentry[i]) && fntentry[i].magic == FNTENTRY_MAGIC && i<FNT_ENTRIES; i++)
+				printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, i, &fntentry[i], &fntentry[i].ts);
 			offset.QuadPart += read;
 		}
 	}
+#endif
 	CloseHandle(fp);
 	printf ("Done.\n");
 	if (hShell) FreeLibrary(hShell);
@@ -659,21 +646,22 @@ static int myPathCleanupSpec(PWSTR pszSpec)
  *				  with this, as there can be multiple file names in the table
  *				  with the same name.
  *	fnt			- File name table entry.
+ *  ts			- Pointer to timestamp that should get used
  * Returns:
  *	-
  */
-static void dumpFNTEntry(char *pszDstDir, int idx, FNTENTRY *fnt)
+static void dumpFNTEntry(char *pszDstDir, int idx, FNTENTRY *fnt, TIMESTAMP *ts)
 {
 	SYSTEMTIME st={0};
 	FILETIME ft;
 	char outfile[MAX_PATH], *pfn=outfile;
 
-	st.wYear = B2N_16(fnt->yy);
-	st.wMonth = fnt->mm;
-	st.wDay = fnt->dd;
-	st.wHour = fnt->hh;
-	st.wMinute = fnt->mi;
-	st.wSecond = fnt->ss;
+	st.wYear = B2N_16(ts->yy);
+	st.wMonth = ts->mm;
+	st.wDay = ts->dd;
+	st.wHour = ts->hh;
+	st.wMinute = ts->mi;
+	st.wSecond = ts->ss;
 	pfn+=snprintf(outfile, sizeof(outfile), "%s\\[%03d]%s", pszDstDir, idx, fnt->progname);
 	CreateDirectory(outfile, NULL);
 	if (SystemTimeToFileTime(&st, &ft))
@@ -730,23 +718,25 @@ static void dumpFNTEntry(char *pszDstDir, int idx, FNTENTRY *fnt)
  *				  with this, as there can be multiple file names in the table
  *				  with the same name.
  *	fnt			- File name table entry.
+ *  ts			- Timestamp to show
  * Returns:
  *	-
  */
-static void printFNTEntry(char *pszDstDir, WCHAR *wszDstDir, fpPathCleanupSpec _PathCleanupSpec, int idx, FNTENTRY *fnt)
+static void printFNTEntry(char *pszDstDir, WCHAR *wszDstDir, 
+						  fpPathCleanupSpec _PathCleanupSpec, int idx, FNTENTRY *fnt, TIMESTAMP *ts)
 {
 	WCHAR wszTmp[MAX_PATH+1];
 
 	MultiByteToWideChar(CP_ACP,0,fnt->progname,-1,wszTmp,sizeof(wszTmp)/sizeof(wszTmp[0]));
 	WideCharToMultiByte(CP_OEMCP,0,wszTmp,-1,fnt->progname,sizeof(fnt->progname),NULL,NULL);
-	printf ("\r[%02d.%02d.%04d %02d:%02d:%02d] %s\n", 
-		fnt->dd, fnt->mm, B2N_16(fnt->yy), fnt->hh, fnt->mi, fnt->ss, fnt->progname);
+	printf ("\r#%03d [%02d.%02d.%04d %02d:%02d:%02d] %s\n", 
+		idx, ts->dd, ts->mm, B2N_16(ts->yy), ts->hh, ts->mi, ts->ss, fnt->progname);
 	if (pszDstDir) 
 	{
 		myPathCleanupSpec(wszTmp);
 		if (_PathCleanupSpec) _PathCleanupSpec(wszDstDir,wszTmp);
 		WideCharToMultiByte(CP_ACP,0,wszTmp,-1,fnt->progname,sizeof(fnt->progname),NULL,NULL);
-		dumpFNTEntry(pszDstDir, idx, fnt);
+		dumpFNTEntry(pszDstDir, idx, fnt, ts);
 	}
 }
 
@@ -854,7 +844,7 @@ int main(int argc, char **argv)
 	int i;
 	DWORD dwXthresh=SCR_THRESH_X, dwMthresh=SCR_THRESH_M, dwOffset=0, dwStart=0;
 
-	printf ("Simple Pioneer DVR-633H recovery\n(c) by leecher@dose.0wnz.at 2014\n\n");
+	printf ("Simple Pioneer "RECORDER" recovery\n(c) by leecher@dose.0wnz.at 2014\n\n");
 	for (i=1; i<argc; i++)
 	{
 		if (argv[i][0]!='-')
@@ -906,9 +896,9 @@ int main(int argc, char **argv)
 			switch (argv[i][1])
 			{
 			case 'd':
-				return dir(argv[i+1], argv[i+2], MAX_DIRSRCH, MODE_EXTRACT)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[i+1], argv[i+2], dwStart, MAX_DIRSRCH, MODE_EXTRACT)?EXIT_SUCCESS:EXIT_FAILURE;
 			case 'L':
-				return dir(argv[i+1], argv[i+2], MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[i+1], argv[i+2], dwStart, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
 			}
 			if (!extract(argv[i+1], argv[i+2], dwOffset, dwStart, dwXthresh)) return EXIT_FAILURE;
 			if (argv[i++][1]!='p') return EXIT_SUCCESS;
@@ -925,8 +915,13 @@ int main(int argc, char **argv)
 				fprintf(stderr, "%s needs source file!\n", argv[i]);
 				return EXIT_FAILURE;
 			}
-			if (!dir(argv[++i], NULL, MAX_DIRSRCH, MODE_USEFS))
-				return dir(argv[++i], NULL, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+			if (!dir(argv[++i], NULL, dwStart, MAX_DIRSRCH, MODE_USEFS))
+#ifdef FNTENTRY_MAGIC
+				return dir(argv[++i], NULL, dwStart, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+#else
+				return EXIT_FAILURE;
+#endif
+			return TRUE;
 		default:
 			fprintf(stderr, "Unknown commandline option: %s\n\n", argv[i]);
 			break;

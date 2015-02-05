@@ -91,6 +91,14 @@ SOURCE=.\pioneer_rec.c
 # Begin Group "Header-Dateien"
 
 # PROP Default_Filter "h;hpp;hxx;hm;inl"
+# Begin Source File
+
+SOURCE=.\dvr545h.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\dvr633h.h
+# End Source File
 # End Group
 # Begin Group "Ressourcendateien"
 
