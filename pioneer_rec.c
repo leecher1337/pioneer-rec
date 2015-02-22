@@ -57,7 +57,6 @@ typedef struct {
 #pragma pack()
 
 #if DVR == 545
-#error DVR545
 #include "dvr545h.h"
 #else
 #include "dvr633h.h"
@@ -454,7 +453,7 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwM
 				ReadFile(fp,&fntentry,sizeof(fntentry),&read,NULL) && read)
 			{
 				/* Iterate over programs */
-				for (j=0; *((WORD*)&fntentry[j]) && j<FNT_ENTRIES; j++, pfx++)
+				for (j=0; j<FNT_ENTRIES && fntentry[j].files; j++, pfx++)
 				{
 					if ((DWORD)pfx<dwStart) continue;
 					pfntentry = &fntentry[j];
