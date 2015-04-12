@@ -14,4 +14,4 @@ Binary: [pioneer_rec.zip](http://dose.0wnz.at/scripts/cpp/pioneer_rec.zip)
 
 Discussion: [Blog post](http://hardwarefetish.com/584-pioneer-dvr-recorder-harddisk-recovery)
 
-For Panasonic DVR recorders, you can have a look at my [panasonic-rec](https://code.google.com/p/panasonic-rec/) project.
+For Panasonic DVR recorders, you can have a look at my [panasonic-rec](https://github.com/leecher1337/panasonic-rec) project.
