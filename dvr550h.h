@@ -21,17 +21,17 @@ typedef struct {
 	long unk1;
 	DWORD unk2;
 	WORD sort;      
-	WORD sort2;		
-	WORD sort3;		// Maybe real sort?
+	WORD fotoffset;  // Offset in FOTENTRY table
+	WORD sort3;		 // Maybe real sort?
 	WORD channel;	 // Recording source.. <0x80 = Chan number, >0x80 = LINE: 0x80=L1, 0x81=L2, 0x82=L3, 0x83=DV
 	BYTE unk5[8];
 	char progname[64];// Name of program
 	DWORD unk3;
-	WORD fotoffset_hi;
-	WORD fotoffset;  // Offset in FOTENTRY table
+	WORD unk4;
+	WORD sort2;
 	WORD files_hi;
 	WORD files;		 // Number of files in this directory?
-	BYTE unk4[0x9C];
+	BYTE unk6[0x9C];
 } FNTENTRY;
 
 /* A [F]ile [O]rder [T]able entry */
