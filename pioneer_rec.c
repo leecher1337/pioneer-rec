@@ -59,7 +59,11 @@ typedef struct {
 #if DVR == 545
 #include "dvr545h.h"
 #else
+#if DVR == 550
+#include "dvr550h.h"
+#else
 #include "dvr633h.h"
+#endif
 #endif
 
 /* Constants */
