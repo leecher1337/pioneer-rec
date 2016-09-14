@@ -19,6 +19,8 @@ CFG=pioneer_rec - Win32 Debug
 !MESSAGE 
 !MESSAGE "pioneer_rec - Win32 Release" (basierend auf  "Win32 (x86) Console Application")
 !MESSAGE "pioneer_rec - Win32 Debug" (basierend auf  "Win32 (x86) Console Application")
+!MESSAGE "pioneer_rec - Win32 DVR545" (basierend auf  "Win32 (x86) Console Application")
+!MESSAGE "pioneer_rec - Win32 DVR550" (basierend auf  "Win32 (x86) Console Application")
 !MESSAGE 
 
 # Begin Project
@@ -74,12 +76,60 @@ LINK32=xilink6.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /debug /machine:I386 /pdbtype:sept
 # ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /debug /machine:I386 /pdbtype:sept
 
+!ELSEIF  "$(CFG)" == "pioneer_rec - Win32 DVR545"
+
+# PROP BASE Use_MFC 0
+# PROP BASE Use_Debug_Libraries 0
+# PROP BASE Output_Dir "pioneer_rec___Win32_DVR545"
+# PROP BASE Intermediate_Dir "pioneer_rec___Win32_DVR545"
+# PROP BASE Target_Dir ""
+# PROP Use_MFC 0
+# PROP Use_Debug_Libraries 0
+# PROP Output_Dir "pioneer_rec___Win32_DVR545"
+# PROP Intermediate_Dir "pioneer_rec___Win32_DVR545"
+# PROP Target_Dir ""
+# ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
+# ADD CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /D DVR=545 /YX /FD /c
+# ADD BASE RSC /l 0x407 /d "NDEBUG"
+# ADD RSC /l 0x407 /d "NDEBUG"
+BSC32=bscmake.exe
+# ADD BASE BSC32 /nologo
+# ADD BSC32 /nologo
+LINK32=xilink6.exe
+# ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386
+# ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386
+
+!ELSEIF  "$(CFG)" == "pioneer_rec - Win32 DVR550"
+
+# PROP BASE Use_MFC 0
+# PROP BASE Use_Debug_Libraries 0
+# PROP BASE Output_Dir "pioneer_rec___Win32_DVR550"
+# PROP BASE Intermediate_Dir "pioneer_rec___Win32_DVR550"
+# PROP BASE Target_Dir ""
+# PROP Use_MFC 0
+# PROP Use_Debug_Libraries 0
+# PROP Output_Dir "pioneer_rec___Win32_DVR550"
+# PROP Intermediate_Dir "pioneer_rec___Win32_DVR550"
+# PROP Target_Dir ""
+# ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /D DVR=545 /YX /FD /c
+# ADD CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /D DVR=550 /YX /FD /c
+# ADD BASE RSC /l 0x407 /d "NDEBUG"
+# ADD RSC /l 0x407 /d "NDEBUG"
+BSC32=bscmake.exe
+# ADD BASE BSC32 /nologo
+# ADD BSC32 /nologo
+LINK32=xilink6.exe
+# ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386
+# ADD LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:console /machine:I386
+
 !ENDIF 
 
 # Begin Target
 
 # Name "pioneer_rec - Win32 Release"
 # Name "pioneer_rec - Win32 Debug"
+# Name "pioneer_rec - Win32 DVR545"
+# Name "pioneer_rec - Win32 DVR550"
 # Begin Group "Quellcodedateien"
 
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
