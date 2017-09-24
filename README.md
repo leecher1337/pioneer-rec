@@ -1,4 +1,4 @@
-So there you are with your Pioneer DVR633H-S, DVR545H, DVR-550H or Sony HXD995 showing you an HDD Error and 
+So there you are with your Pioneer DVR633H-S, DVR545H, DVR-550H, DVR-520H or Sony HXD995 showing you an HDD Error and 
 refusing to boot...
 This usually indicates that the harddrive in the recorder went bad.
 But don't panic, there may be hope!
