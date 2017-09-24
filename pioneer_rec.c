@@ -56,6 +56,9 @@ typedef struct {
 
 #pragma pack()
 
+#if DVR == 520
+#include "dvr520h.h"
+#else
 #if DVR == 545
 #include "dvr545h.h"
 #else
@@ -63,6 +66,7 @@ typedef struct {
 #include "dvr550h.h"
 #else
 #include "dvr633h.h"
+#endif
 #endif
 #endif
 
