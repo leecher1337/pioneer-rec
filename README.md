@@ -14,4 +14,14 @@ Binary: [pioneer_rec.zip](http://dose.0wnz.at/scripts/cpp/pioneer_rec.zip)
 
 Discussion: [Blog post](http://hardwarefetish.com/584-pioneer-dvr-recorder-harddisk-recovery)
 
+Here is a compatibility matrix of the recorders that were reported to work with the respective version of the utility:
+
+Header     | Pioneer                       | Sony
+---------- | ----------------------------- | -----------------
+dvr520h.h  | DVR-520H                      | 
+dvr545h.h  | DVR-545H                      |
+dvr550h.h  | DVR-550H                      | HXDx90, HXD995, HXD1070
+dvr633h.h  | DVR-530H, DVR-633H, DMR-XW300 |
+
+
 For Panasonic DVR recorders, you can have a look at my [panasonic-rec](https://github.com/leecher1337/panasonic-rec) project.
