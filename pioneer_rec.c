@@ -895,6 +895,7 @@ int main(int argc, char **argv)
 		case 'p':
 		case 'x':
 		case 'd':
+		case 'L':
 			if (argc<=i+2)
 			{
 				fprintf(stderr, "%s needs source file and destination directory!\n", argv[i]);
