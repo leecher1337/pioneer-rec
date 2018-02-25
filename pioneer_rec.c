@@ -54,6 +54,8 @@ typedef struct {
 	BYTE pad;
 } TIMESTAMP;
 
+typedef WORD INODEINDEX;
+
 #pragma pack()
 
 #if DVR == 520
@@ -71,7 +73,7 @@ typedef struct {
 #endif
 
 /* Constants */
-#define FNTDIR_ENTRIES   (SECT_SIZE/sizeof(ADDRESS))
+#define FNTDIR_ENTRIES   ((SECT_SIZE/sizeof(ADDRESS))*2)
 #define BLOCKDIR_ENTRIES (BLOCK_SIZE/sizeof(ADDRESS))
 #define FATDIR_ENTRIES   (BLOCK_SIZE/sizeof(ADDRESS))
 #define FOTDIR_ENTRIES   ((1<<(sizeof(WORD)*8))/FOT_ENTRIES)
@@ -116,7 +118,7 @@ static BOOL dumpFile(HANDLE fp, HANDLE fpOut, FATENTRY *fat);
 int usage(char *pszCmd)
 {
 	printf ("Usage: %s [-s<x|m> <SCR threshold>] [-o <Offset>] [-c <Start-Cnt>]\n"
-		"\t<-l> <src file>\n"
+		"\t<-l> <src file> <-D>\n"
 		"\t<-d|-x|-p|-L> <src file> <dest dir>\n"
 		"\t<-m> <dest dir>\n\n"
 		"Options:\n"
@@ -128,6 +130,7 @@ int usage(char *pszCmd)
 		"\t-sm\tSpecifies threshold for -m (merge), Default: %d\n"
 		"\t-o\tSpecifies offset in <src file> where to start search, Def.: 0\n"
 		"\t-c\t-x,-p: Specifies start counter of MPEG-File naming, Def.:0\n"
+		"\t-D\tOn extraction, use dub mode (keeps dev. editings)\n"
 		"\t\t-d,-l,-L: Specifies file name table entry to start with, Def.:0\n\n"
 		"Operations (mandatory):\n"
 		"\t-l\tList names of recordings found in <src file>\n"
@@ -349,6 +352,11 @@ BOOL merge(char *pszDstDir, DWORD dwStep)
 #else
 #define MODE_HEUR		MODE_USEFS
 #endif
+#define MODE_MAX		4	/* Maximum mode flag, other hi part is flags */
+#define MODE_MASK		(MODE_MAX-1)
+#define MODE_FLAG_DUB	128	/* Use "Dubbing" mode, skip deleted chunks and 
+							 * merge chunks like edited on recorder. No PTS
+							 * updating yet, use with care! */
 BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwMode)
 {
 	HANDLE fp, fpOut;
@@ -357,8 +365,9 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwM
 	DWORD read;
 	WCHAR wszDstDir[MAX_PATH];
 	fpPathCleanupSpec _PathCleanupSpec = NULL;
-	int i;
+	int i, kk, kklen, KCurrentProgramNumber;
 	FNTENTRY fntentry[FNT_ENTRIES], *pfntentry;
+	INODEINDEX InodeIndexTable[1000];
 	ADDRESS fntaddr;
 
 	if (pszDstDir)
@@ -412,12 +421,12 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwM
 	else imgsz.LowPart=GetFileSize(fp,&imgsz.HighPart);
 	SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN);
 
-	if (dwMode)
+	if (dwMode & MODE_MASK)
 	{
 		ADDRESS fntdir[FNTDIR_ENTRIES], fatdir[FATDIR_ENTRIES], fotdir[FOTDIR_ENTRIES];
 		FATENTRY fatentry[FAT_ENTRIES], *pfatentry;
 		FOTENTRY fotentry[FOT_ENTRIES], *pfotentry;
-		int j, k, pfx, fatoffset, fotoffset, ftoffs, files;
+		int j, k, pfx, kpfx, fatoffset, fotoffset, ftoffs, files;
 
 		/* Accurately parse directory structure and extract videos based on
 		 * filesystem information
@@ -427,6 +436,14 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwM
 		if (!ReadFile(fp,&fntdir,sizeof(fntdir),&read,NULL) || !read)
 		{
 			fprintf (stderr, "Cannot read FNT Directory info @%X%08X: ", offset.HighPart, offset.LowPart);
+			ShowError();
+			return FALSE;
+		}
+
+		/* Read INODE Index table, if needed */
+		if ((dwMode & MODE_FLAG_DUB) && (!ReadFile(fp,&InodeIndexTable,sizeof(InodeIndexTable),&read,NULL) || !read))
+		{
+			fprintf (stderr, "Cannot read Inode index table: ");
 			ShowError();
 			return FALSE;
 		}
@@ -451,118 +468,168 @@ BOOL dir(char *pszSrc, char *pszDstDir, DWORD dwStart, DWORD dwThresh, DWORD dwM
 			return FALSE;
 		}
 
+		kklen = (dwMode & MODE_FLAG_DUB)?sizeof(InodeIndexTable)/sizeof(InodeIndexTable[0]):1;
 
-		/* Now iterate over file name directory (program names) */
-		for (i=0, pfx=0; fntdir[i].block && i<FNTDIR_ENTRIES; i++)
+		for (kk=0; kk<kklen; kk++)
 		{
-			offset.QuadPart=B2N_32(fntdir[i].block);
-			offset.QuadPart *= BLOCK_SIZE;
-			if (SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) &&
-				ReadFile(fp,&fntentry,sizeof(fntentry),&read,NULL) && read)
-			{
-				/* Iterate over programs */
-				for (j=0; j<FNT_ENTRIES && fntentry[j].files; j++, pfx++)
-				{
-					if ((DWORD)pfx<dwStart) continue;
-					pfntentry = &fntentry[j];
-#ifndef FAT_TS
-					// Assuming that on models with TS in FAT, there is only 1 file...
-					printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, pfx, pfntentry, &pfntentry->ts);
-#endif
-					files = B2N_16(pfntentry->files);
-					if (files>1) printf ("%d files.\n", files);
+			/* We possibly reached end of IndexTable */ 
+			if ((dwMode & MODE_FLAG_DUB) && !InodeIndexTable[kk]) break;
 
-					/* Iterate over files the program consists of */
-					fotoffset = B2N_16(pfntentry->fotoffset);
-					for (k=0; k<files && fotoffset; k++)
+			/* Now iterate over file name directory (program names) */
+			KCurrentProgramNumber = 0;
+			for (i=0, pfx=0; i<FNTDIR_ENTRIES; i++)
+			{
+				if (dwMode & MODE_FLAG_DUB)
+				{
+					if (!fntdir[i].block)
 					{
-						fotoffset--;
-						if ((ftoffs = fotoffset/FOT_ENTRIES)< FOTDIR_ENTRIES &&
-							fotdir[ftoffs].block)
+						KCurrentProgramNumber += 8;
+						continue;
+					}
+					kpfx = kk+1;
+				}
+				else
+				{
+					if (!fntdir[i].block) break;
+					kpfx = pfx;
+				}
+				offset.QuadPart=B2N_32(fntdir[i].block);
+				offset.QuadPart *= BLOCK_SIZE;
+				if (SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) &&
+					ReadFile(fp,&fntentry,sizeof(fntentry),&read,NULL) && read)
+				{
+					/* Iterate over programs */
+					for (j=0; j<FNT_ENTRIES; j++, pfx++)
+					{
+						if (!fntentry[j].files && !(dwMode & MODE_FLAG_DUB)) break;
+						if ((DWORD)pfx<dwStart) continue;
+						KCurrentProgramNumber++;
+						if (!(dwMode & MODE_FLAG_DUB) || KCurrentProgramNumber == B2N_16(InodeIndexTable[kk]))
 						{
-							offset.QuadPart = B2N_32(fotdir[ftoffs].block);
-							offset.QuadPart *= BLOCK_SIZE;
-							if (SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) &&
-								ReadFile(fp,&fotentry,sizeof(fotentry),&read,NULL) && read)
+							pfntentry = &fntentry[j];
+#ifndef FAT_TS
+							// Assuming that on models with TS in FAT, there is only 1 file...
+							printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, kpfx, pfntentry, &pfntentry->ts);
+#endif
+							files = B2N_16(pfntentry->files);
+							if (files>1) printf ("%d files.\n", files);
+
+							/* Iterate over files the program consists of */
+							fotoffset = B2N_16(pfntentry->fotoffset);
+							for (k=0; k<files && fotoffset; k++)
 							{
-								pfotentry = &fotentry[fotoffset%FOT_ENTRIES];
-								fatoffset = B2N_16(pfotentry->fatoffset)-1;
-								if ((ftoffs = fatoffset/FAT_ENTRIES)< FATDIR_ENTRIES &&
-									fatdir[ftoffs].block)
+								fotoffset--;
+								if ((ftoffs = fotoffset/FOT_ENTRIES)< FOTDIR_ENTRIES &&
+									fotdir[ftoffs].block)
 								{
-									/* Seek to FAT entry for given file */
-									offset.QuadPart=B2N_32(fatdir[ftoffs].block);
+									offset.QuadPart = B2N_32(fotdir[ftoffs].block);
 									offset.QuadPart *= BLOCK_SIZE;
 									if (SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) &&
-										ReadFile(fp,&fatentry,sizeof(fatentry),&read,NULL) && read)
+										ReadFile(fp,&fotentry,sizeof(fotentry),&read,NULL) && read)
 									{
-										pfatentry = &fatentry[fatoffset%FAT_ENTRIES];
-#ifdef FAT_TS
-										printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, pfx, pfntentry, &pfatentry->ts);
-#endif
-										offset.QuadPart = B2N_32(pfatentry->filesz);
-										printf ("Size: %d blocks ", offset.LowPart);
-										offset.QuadPart *= BLOCK_SIZE / 1024;
-										offset.QuadPart /= 1024;
-										printf ("(%d MB)\n", offset.LowPart);
-
-										if (pszDstDir && dwMode == MODE_EXTRACT)
+										pfotentry = &fotentry[fotoffset%FOT_ENTRIES];
+										fatoffset = B2N_16(pfotentry->fatoffset)-1;
+										if ((ftoffs = fatoffset/FAT_ENTRIES)< FATDIR_ENTRIES &&
+											fatdir[ftoffs].block)
 										{
-											char outfile[MAX_PATH];
-
-											/* Seek to block list directory */
-											snprintf(outfile, sizeof(outfile), "%s\\[%03d]%s\\%08d.mpg", pszDstDir, pfx, pfntentry->progname, k);
-											if ((fpOut=CreateFile(outfile, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, 
-												CREATE_ALWAYS, 0, NULL)) != INVALID_HANDLE_VALUE)
+											/* Seek to FAT entry for given file */
+											offset.QuadPart=B2N_32(fatdir[ftoffs].block);
+											offset.QuadPart *= BLOCK_SIZE;
+											if (SetFilePointer(fp,offset.LowPart, &offset.HighPart,FILE_BEGIN) &&
+												ReadFile(fp,&fatentry,sizeof(fatentry),&read,NULL) && read)
 											{
-												/* And finally dump the files associated with the program */
-												dumpFile(fp,fpOut,pfatentry);
-												CloseHandle(fpOut);
-
-												/* Ensure to set date/time correctly for the files afterwards */
-												dumpFNTEntry(pszDstDir, pfx, pfntentry,
+												pfatentry = &fatentry[fatoffset%FAT_ENTRIES];
 #ifdef FAT_TS
-													&pfatentry->ts
-#else
-													&pfntentry->ts
+												printFNTEntry(pszDstDir, wszDstDir, _PathCleanupSpec, kpfx, pfntentry, &pfatentry->ts);
 #endif
-													);
+												offset.QuadPart = B2N_32(pfatentry->filesz);
+												printf ("Size: %d blocks ", offset.LowPart);
+												offset.QuadPart *= BLOCK_SIZE / 1024;
+												offset.QuadPart /= 1024;
+												printf ("(%d MB)\n", offset.LowPart);
+
+												if (pszDstDir && (dwMode & MODE_MASK) == MODE_EXTRACT)
+												{
+													char outfile[MAX_PATH];
+
+													/* The consists of multiple streams, make a ffmpeg concat script */
+													if (k>0)
+													{
+														snprintf(outfile, sizeof(outfile), "%s\\[%03d]%s\\concat.txt", pszDstDir, kpfx, pfntentry->progname);
+														if ((fpOut=CreateFile(outfile, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, 
+															(k==1?CREATE_ALWAYS:OPEN_EXISTING), 0, NULL)) != INVALID_HANDLE_VALUE)
+														{
+															WriteFile(fpOut,outfile,snprintf(outfile, sizeof(outfile), "file '%08d.mpg'\n", k),&read,NULL);
+															CloseHandle(fpOut);
+														}
+														if (k==1)
+														{
+															snprintf(outfile, sizeof(outfile), "%s\\[%03d]%s\\concat.bat", pszDstDir, kpfx, pfntentry->progname);
+															if ((fpOut=CreateFile(outfile, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, 
+																CREATE_ALWAYS, 0, NULL)) != INVALID_HANDLE_VALUE)
+															{
+																WriteFile(fpOut,"ffmpeg -f concat -i concat.txt -c copy concat.vob", 49, &read, NULL);
+																CloseHandle(fpOut);
+															}
+														}
+
+													}
+													/* Seek to block list directory */
+													snprintf(outfile, sizeof(outfile), "%s\\[%03d]%s\\%08d.mpg", pszDstDir, kpfx, pfntentry->progname, k);
+													if ((fpOut=CreateFile(outfile, GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, 
+														CREATE_ALWAYS, 0, NULL)) != INVALID_HANDLE_VALUE)
+													{
+														/* And finally dump the files associated with the program */
+														dumpFile(fp,fpOut,pfatentry);
+														CloseHandle(fpOut);
+
+														/* Ensure to set date/time correctly for the files afterwards */
+														dumpFNTEntry(pszDstDir, kpfx, pfntentry,
+#ifdef FAT_TS
+															&pfatentry->ts
+#else
+															&pfntentry->ts
+#endif
+															);
+													}
+													else
+													{
+														fprintf (stderr, "Cannot write to file %s: ", outfile);
+														ShowError();
+													}
+												}
 											}
 											else
 											{
-												fprintf (stderr, "Cannot write to file %s: ", outfile);
+												fprintf (stderr, "Cannot seek to fatentry #%d @ offset %X%08X: ", ftoffs, offset.HighPart, offset.LowPart);
 												ShowError();
+												break;
 											}
 										}
+										else
+											fprintf(stderr, "Invalid FAT entry (#%d)\n", ftoffs);
+										fotoffset=B2N_16(pfotentry->nextoffset);
 									}
 									else
 									{
-										fprintf (stderr, "Cannot seek to fatentry #%d @ offset %X%08X: ", ftoffs, offset.HighPart, offset.LowPart);
+										fprintf (stderr, "Cannot seek to file order table entry #%d @block %X: ", ftoffs, B2N_32(fotdir[ftoffs].block));
 										ShowError();
 										break;
 									}
+
 								}
 								else
-									fprintf(stderr, "Invalid FAT entry (#%d)\n", ftoffs);
-								fotoffset=B2N_16(pfotentry->nextoffset);
+									fprintf(stderr, "Offset %d in FOT doesn't point to a correct directory.\n", fotoffset);
 							}
-							else
-							{
-								fprintf (stderr, "Cannot seek to file order table entry #%d @block %X: ", ftoffs, B2N_32(fotdir[ftoffs].block));
-								ShowError();
-								break;
-							}
-
+							if (dwMode & MODE_FLAG_DUB) break;
 						}
-						else
-							fprintf(stderr, "Offset %d in FOT doesn't point to a correct directory.\n", fotoffset);
 					}
 				}
-			}
-			else
-			{
-				fprintf(stderr, "Cannot read FNTENTRY @%X%08X: ", offset.HighPart, offset.LowPart);
-				ShowError();
+				else
+				{
+					fprintf(stderr, "Cannot read FNTENTRY @%X%08X: ", offset.HighPart, offset.LowPart);
+					ShowError();
+				}
 			}
 		}
 	}
@@ -849,7 +916,7 @@ static BOOL dumpFile(HANDLE fp, HANDLE fpOut, FATENTRY *fat)
 int main(int argc, char **argv)
 {
 	int i;
-	DWORD dwXthresh=SCR_THRESH_X, dwMthresh=SCR_THRESH_M, dwOffset=0, dwStart=0;
+	DWORD dwXthresh=SCR_THRESH_X, dwMthresh=SCR_THRESH_M, dwOffset=0, dwStart=0, dwFlags=0;
 
 	printf ("Simple Pioneer "RECORDER" recovery\n(c) by leecher@dose.0wnz.at 2014\n\n");
 	for (i=1; i<argc; i++)
@@ -864,6 +931,9 @@ int main(int argc, char **argv)
 		case 'h':
 		case '?':
 			return usage(argv[0]);
+		case 'D':
+			dwFlags |= MODE_FLAG_DUB;
+			break;
 		case 's':
 		case 'o':
 		case 'c':
@@ -904,9 +974,9 @@ int main(int argc, char **argv)
 			switch (argv[i][1])
 			{
 			case 'd':
-				return dir(argv[i+1], argv[i+2], dwStart, MAX_DIRSRCH, MODE_EXTRACT)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[i+1], argv[i+2], dwStart, MAX_DIRSRCH, MODE_EXTRACT|dwFlags)?EXIT_SUCCESS:EXIT_FAILURE;
 			case 'L':
-				return dir(argv[i+1], argv[i+2], dwStart, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[i+1], argv[i+2], dwStart, MAX_DIRSRCH, MODE_HEUR|dwFlags)?EXIT_SUCCESS:EXIT_FAILURE;
 			}
 			if (!extract(argv[i+1], argv[i+2], dwOffset, dwStart, dwXthresh)) return EXIT_FAILURE;
 			if (argv[i++][1]!='p') return EXIT_SUCCESS;
@@ -923,9 +993,9 @@ int main(int argc, char **argv)
 				fprintf(stderr, "%s needs source file!\n", argv[i]);
 				return EXIT_FAILURE;
 			}
-			if (!dir(argv[++i], NULL, dwStart, MAX_DIRSRCH, MODE_USEFS))
+			if (!dir(argv[++i], NULL, dwStart, MAX_DIRSRCH, MODE_USEFS|dwFlags))
 #ifdef FNTENTRY_MAGIC
-				return dir(argv[++i], NULL, dwStart, MAX_DIRSRCH, MODE_HEUR)?EXIT_SUCCESS:EXIT_FAILURE;
+				return dir(argv[++i], NULL, dwStart, MAX_DIRSRCH, MODE_HEUR|dwFlags)?EXIT_SUCCESS:EXIT_FAILURE;
 #else
 				return EXIT_FAILURE;
 #endif

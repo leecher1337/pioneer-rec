@@ -246,7 +246,7 @@ Please note that the names of the tables were made up by me!
 | Block # of Table 1   +->+--------------------+
 | Block # of Table 2   |  | File name table    | +--------------------------+
 | ...                  |  +--------------------+ | File name table entry    |
-| Block # of Table 64  |  | File name entry 1  | +--------------------------+
+| Block # of Table 128 |  | File name entry 1  | +--------------------------+
 +----------------------+  | File name entry 2  |/| Recording date           |
                           | ...                |\| File Order table offset  ++
         @ 0x2006AE8       | File name entry 21 | | Number of files of progr.||
@@ -319,6 +319,109 @@ block lists that point to the blocks that finally make up the file.
 Each block list entry contains a pointer to the acutal block on the disk
 and the number of consecutive blocks at that block that are part of the
 file. The highest bit of the block count needs to be masked off.
+
+
+On-Device editing features
+==========================
+At least the Sony models (similar to DVR-550H) seem to have a seperate table 
+that contain the list of chunks from various recordings that can be used
+to merge chunks of recording together and i.e. cut out recordings.
+The tabe is limited to 1000 entires and immediately follows the File name
+table directory. Ken Rolland did some research on them on his Sony RDR-HXD995, 
+here is what he found out:
+
+First of all, some info about the Sony.
+
+The Sony has a limit of 1000 recordings, suggesting it uses a fixed area of
+the disc to store the list of available recordings. Each recording has a
+limit on length of something like 12 hours from my memory.
+
+When choosing a recording to watch, delete, or edit, the system displays a
+list of the recordings, which are numbered from 1 upwards to the number of
+available recordings.
+The recordings in the list are numbered with the most recent recording
+having the highest number. So, the first recording that is made is number
+1, the second is numbered 2 and so on. If a recording is deleted, then it 
+is removed from the list and the list is automatically renumbered. As you 
+would expect the deleted recording is no longer visible or available 
+(though not deleted from the disc).
+
+This behaviour suggests the Sony must store a list of available recordings
+somewhere on the disc, a list of pointers to the recordings perhaps.
+So, I looked on the disc to find where the list of recordings might be
+stored, assuming it would be in the form of an array of pointers (a chunk
+of fixed memory) rather than a linked list because of the 1000 entry limit.
+
+Having found such a list at 0xA400400, I then read it to discover the
+numbers of the Recordings that are valid and available. It is a simple list
+of numbers, the number stored at position 0 is a number to the n'th
+recording position 1 the the n'th+1 recording and so on. Adding a
+recording, appends to the list, and deleting a recording removes it from
+the list and re-orders the list.
+
+Now, the Sony provides editing facilities on the recordings. It is possible
+to Divide a recording at a chosen point. This results in the divided
+program becoming 2 recordings, split at the chosen point. The recording's
+list is updated and renumbered accordingly. So, the act of dividing a
+recording inserts a new recording in the list such that the two divided
+recordings are adjacent to each other in  the list. It's as if the two
+resulting recordings were recorded independently, but at the same time.
+The interesting thing is that space is used on the disc for both
+recordings, and both recordings exist in the recording's list. Now, if one
+of the recordings from the split is deleted, it still exists on the disc as
+a potential recording (until a possible garbage collect) but it does not
+exist in the recording's list.
+
+So, running pioneer_rec as I received it using the -d option worked
+OK, but it created deleted recordings as well as non-deleted recordings. It
+created both parts of a divided recording, even if one (or both) parts of a
+divided recording had been deleted.
+
+My solution was to find the list of recordings on the disc, and use it to
+dump only the recordings that were contained in the recording's list. This
+I have done successfully.
+
+My next problem was to deal with recordings that have had parts of them
+removed.
+The Sony's editing facilities also provide an A-B delete. That is an
+existing recording can have a section from A to B removed from the
+recording. It's useful for removing adverts from a recording.
+Now, one would start with the assumption that the operation of deleting a
+section would simply change the data structures on the disc to reflect the
+removal of the section, i.e. change some form of linked list to remove the
+required section of recording, leaving the space to be overwritten at a
+later stage. The Sony creates additional sub-recordings as a result of this
+type of editing, and can play the complete recording as one would expect
+without the deleted sections. Under these circumstances, we end up with
+multiple files on the disc that have to be appended (merged) together to
+dump the complete recording (without the deleted parts).
+
+Now, the Sony allows the dumping of recordings from the hard disk to a DVD.
+They call this dubbing. It is possible to dub a recording, or a number of
+recordings to a DVD in a single session. The DVD can be "finalised" so that
+it can be played on other DVD players. 
+
+So, my hunch from doing a bit of research on the net is that there is a
+problem perhaps with the PTS "Presentation Time Stamp" when the files are
+edited on the Sony. The editing does not seem to adjust the PTS for each
+frame of the recording. The Sony can still play the recording correctly,
+and it tidy's things up when it dubs recordings to a DVD. But when we dump
+recordings from a Sony image file, the PTS values may be incorrect when a
+recording has been edited by dividing or AB delete. 
+
+To solve the problem with the PTS, the chunks need to be merged i.e. with
+ffmpeg. As the input files are technically .vob and not .mpg, the output
+format .vob also needs to be specified correctly a .vob, otherwise merging
+won't work.
+pioneer-rec creates a list-file concat.txt with the MPG chunks in every 
+program directory for you, if there is a need for merging the chunks.
+It also creates a concat.bat batchfile which calls ffmpeg (must be in
+path) for merging:
+
+  ffmpeg -f concat -i concat.txt -c copy concat.vob
+
+To use this feature as opposed to a classic dump of everything, add the 
+-D parameter to the pioneer_rec commandline.
 
 Porting
 =======
