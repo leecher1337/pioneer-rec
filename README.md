@@ -19,7 +19,7 @@ Here is a compatibility matrix of the recorders that were reported to work with 
 Header     | Pioneer                       | Sony
 ---------- | ----------------------------- | -----------------
 dvr520h.h  | DVR-520H                      | 
-dvr545h.h  | DVR-545H                      |
+dvr545h.h  | DVR-545H, DVR-640H-S                    |
 dvr550h.h  | DVR-550H                      | HXDx90, HXD995, HXD1070
 dvr633h.h  | DVR-530H, DVR-633H, DMR-XW300 |
 
