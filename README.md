@@ -20,7 +20,7 @@ Header     | Pioneer                                 | Sony
 ---------- | --------------------------------------- | -----------------
 dvr520h.h  | DVR-520H                                | 
 dvr545h.h  | DVR-545H, DVR-640H-S                    |
-dvr550h.h  | DVR-550H                                | HXD870, HXDx90, HXD995, HXD1070
+dvr550h.h  | DVR-550H, DVR-LX60                      | HXD870, HXDx90, HXD995, HXD1070
 dvr633h.h  | DVR-433H, DVR-530H, DVR-633H, DMR-XW300 |
 
 
