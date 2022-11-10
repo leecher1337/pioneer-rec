@@ -1,11 +1,11 @@
-So there you are with your Pioneer DVR633H-S, DVR545H, DVR-550H, DVR-520H, Sony HXD showing you an HDD Error and 
+So there you are with your Pioneer DVR633H-S, DVR545H, DVR-550H, DVR-520H, Sony HXD showing you an HDD Error and
 refusing to boot...
 This usually indicates that the harddrive in the recorder went bad.
 But don't panic, there may be hope!
 
 Unlike other utilities for this task, this program is capable of reconstructing the movies from the harddrive by parsing the filesystem structure of the Pioneer DVR instead of just dumping MPEG-chunks!
 
-For further information on how to use it and for technical details about the filesystem structure, please refer to the [README](https://github.com/leecher1337/pioneer-rec/blob/master/README.txt) file. 
+For further information on how to use it and for technical details about the filesystem structure, please refer to the [README](https://github.com/leecher1337/pioneer-rec/blob/master/README.txt) file.
 For the impatient ones, assuming you have a disk image image.dd and a recovery destination directory f:\dump, just do:
 
 `pioneer_rec -d c:\image.dd f:\dump`
@@ -18,9 +18,9 @@ Here is a compatibility matrix of the recorders that were reported to work with 
 
 Header     | Pioneer                                 | Sony
 ---------- | --------------------------------------- | -----------------
-dvr520h.h  | DVR-520H                                | 
+dvr520h.h  | DVR-520H                                |
 dvr545h.h  | DVR-545H, DVR-640H-S                    |
-dvr550h.h  | DVR-550H                                | HXD870, HXDx90, HXD995, HXD1070
+dvr550h.h  | DVR-550H                                | HXD870, HXDx90, HXD990, HXD995, HXD1070
 dvr633h.h  | DVR-433H, DVR-530H, DVR-633H, DMR-XW300 |
 
 
