@@ -20,7 +20,8 @@ damaged and data can be rescued. i.e. on my HDD, Sector 0 and 1 were
 damaged, so it took ages until it was accepted by the operating system,
 but it worked.
 
-So the next thing to do is to dump the contens of the disk to an image
+If you just want to dump a sane harddrive, you can skip this step.
+Otherwise, the next thing to do is to dump the contens of the disk to an image
 file so you need to have at least the size of the HDD
 (256GB) available on one of your harddisks to make an image. 
 You may need up to the same size for the extracted movie data then, 
@@ -29,6 +30,11 @@ There are many tools available for dumping a harddisk to an image file,
 i.e. Datarescue's drdd:
 
 http://www.datarescue.com/photorescue/v3/drdd.htm
+
+As of 06/2025, the download links seem to be broken, so you may want to use 
+the archive.org mirror instead:
+
+https://web.archive.org/web/20250114205844/https://www.datarescue.com/freefiles/drdd.exe.zip
 
 However due to the way how windows handles bad drives, it's usually a pain
 dumping them on Windows, i.e. if the drive detaches itself from the bus 
@@ -49,6 +55,12 @@ If the file allocation structures are intact, you have a good chance for
 a painless recovery using this tool.
 I assume that the name of the image you created in the previous step is 
 image.dd
+If you just want to dump a sane harddrive without having an image, use 
+the physical address of the drive: \\.\PhysicalDriveX
+You can get a list of the attached physical drives with the following 
+command:
+
+wmic diskdrive list brief
 
 You need to have an empty destination directory where the movies will be
 recovered to. Assuming your destination directory is f:\dump just issue:
